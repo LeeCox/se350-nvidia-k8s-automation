@@ -10,6 +10,15 @@ slower DKMS build on that same kernel). Both are officially validated for the A2
 GPU and Kubernetes 1.32-1.36 on bare metal, so 22.04 remains a fine choice if you
 have an existing image/compliance baseline that requires it.
 
+### What about Ubuntu 26.04 LTS?
+
+Checked directly against NVIDIA's GPU Operator platform-support matrix (Aug 2026):
+26.04 LTS (released April 2026) is **not yet listed** as a supported OS anywhere
+in that matrix - only 22.04 and 24.04 LTS appear. New LTS releases typically take
+NVIDIA a few months to certify. 26.04 has the best support lifecycle of the three
+(standard support to May 2031), but until it's certified for the GPU Operator,
+stay on 24.04. Worth rechecking in a few months.
+
 ## Project structure
 
 ```
