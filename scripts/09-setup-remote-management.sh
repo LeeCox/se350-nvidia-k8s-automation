@@ -24,7 +24,10 @@ else
   log "Tailscale already installed or disabled by config"
 fi
 
-if [[ "${ENABLE_COCKPIT:-true}" == "true" ]] && ! systemctl list-unit-files | grep -q '^cockpit.socket'; then
+# Not piped into `grep -q` - see the SIGPIPE/pipefail note in 00-prepare-host.sh. This list is
+# long and cockpit.socket sorts early, so the pipeline reliably returned 141 and Cockpit looked
+# missing even when installed.
+if [[ "${ENABLE_COCKPIT:-true}" == "true" ]] && ! grep -q '^cockpit.socket' <<<"$(systemctl list-unit-files)"; then
   log "Installing Cockpit"
   sudo apt-get install -y cockpit
   sudo systemctl enable --now cockpit.socket

@@ -27,7 +27,8 @@ chmod 600 "$KUBECONFIG_PATH"
 export KUBECONFIG="$KUBECONFIG_PATH"
 log "Waiting for the node to reach Ready"
 for _ in $(seq 1 30); do
-  if kubectl get nodes --no-headers 2>/dev/null | grep -q ' Ready'; then
+  # Not piped into `grep -q` - see the SIGPIPE/pipefail note in 00-prepare-host.sh.
+  if grep -q ' Ready' <<<"$(kubectl get nodes --no-headers 2>/dev/null)"; then
     break
   fi
   sleep 5
