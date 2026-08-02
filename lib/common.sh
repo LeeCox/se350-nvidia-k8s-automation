@@ -1,5 +1,10 @@
 # Shared helpers sourced by every script in this repo. Not meant to be executed directly.
 
+# K3s installs kubectl as a symlink to the k3s binary, and that shim falls back to
+# /etc/rancher/k3s/k3s.yaml - which is root-only, so kubectl fails for a normal user even though
+# 02-install-k3s.sh wrote a perfectly good kubeconfig into the home directory. Point at that one.
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+
 log()  { printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 warn() { printf '\n[%s] WARNING: %s\n' "$(date '+%H:%M:%S')" "$*" >&2; }
 die()  { printf '\n[%s] ERROR: %s\n' "$(date '+%H:%M:%S')" "$*" >&2; exit 1; }
