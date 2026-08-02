@@ -19,8 +19,10 @@ spec:
           command: ["/bin/bash", "-lc"]
           args:
             - |
-              python3 -m dynamo.frontend --http-port 8000 --discovery-backend file > /var/log/dynamo-frontend.log 2>&1 &
-              python3 -m dynamo.vllm --model-path "${DYNAMO_MODEL_ID}" --discovery-backend file
+              # The image runs as uid 1000 (dynamo); /var/log is root-owned, so log to /tmp.
+              python3 -m dynamo.frontend --http-port 8000 --discovery-backend file > /tmp/dynamo-frontend.log 2>&1 &
+              # vLLM's engine parser takes --model; --model-path is rejected by this runtime.
+              python3 -m dynamo.vllm --model "${DYNAMO_MODEL_ID}" --discovery-backend file
           ports:
             - containerPort: 8000
           resources:
