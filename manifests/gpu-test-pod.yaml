@@ -8,7 +8,9 @@ spec:
   restartPolicy: Never
   containers:
     - name: cuda
-      image: nvidia/cuda:12.4.1-base-ubuntu24.04
+      # CUDA 12.4 has no ubuntu24.04 base image - that line never resolved. 12.6.1 is the
+      # earliest that does; 13.2.1 matches the CUDA version the 595.x host driver reports.
+      image: nvidia/cuda:13.2.1-base-ubuntu24.04
       command: ["nvidia-smi"]
       resources:
         limits:
