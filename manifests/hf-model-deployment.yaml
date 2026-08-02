@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hf-model
+  namespace: ${HF_NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hf-model
+  template:
+    metadata:
+      labels:
+        app: hf-model
+    spec:
+      containers:
+        - name: tgi
+          image: ${TGI_IMAGE}
+          env:
+            - name: MODEL_ID
+              value: "${HF_MODEL_ID}"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: token
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+            requests:
+              nvidia.com/gpu: 1
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 15

@@ -1,0 +1,16 @@
+# Reference-only KAITO Workspace for a BYO GPU node. Not applied automatically by any script.
+# Adjust labelSelector to match the label applied by scripts/06-install-kaito.sh, then:
+#   kubectl apply -f manifests/kaito-workspace-example.yaml
+#   kubectl get workspace workspace-phi-4-mini
+apiVersion: kaito.sh/v1beta1
+kind: Workspace
+metadata:
+  name: workspace-phi-4-mini
+spec:
+  resource:
+    labelSelector:
+      matchLabels:
+        apps: llm-inference
+  inference:
+    preset:
+      name: phi-4-mini-instruct
