@@ -17,6 +17,8 @@ require_cmd envsubst
 export DYNAMO_NAMESPACE="${DYNAMO_NAMESPACE:-dynamo}"
 export DYNAMO_IMAGE="${DYNAMO_IMAGE:-nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.0}"
 export DYNAMO_MODEL_ID="${DYNAMO_MODEL_ID:-Qwen/Qwen3-0.6B}"
+# Advisory only under local-path, but the PVC manifest requires a value.
+export MODEL_CACHE_SIZE="${MODEL_CACHE_SIZE:-100Gi}"
 
 kubectl create namespace "$DYNAMO_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 

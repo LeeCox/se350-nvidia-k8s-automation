@@ -23,6 +23,14 @@ spec:
               python3 -m dynamo.frontend --http-port 8000 --discovery-backend file > /tmp/dynamo-frontend.log 2>&1 &
               # vLLM's engine parser takes --model; --model-path is rejected by this runtime.
               python3 -m dynamo.vllm --model "${DYNAMO_MODEL_ID}" --discovery-backend file
+          env:
+            # Without this the hub cache lands in the container's ephemeral layer and every
+            # restart re-downloads the weights. HF_HOME moves it onto the PVC below.
+            - name: HF_HOME
+              value: /model-cache
+          volumeMounts:
+            - name: model-cache
+              mountPath: /model-cache
           ports:
             - containerPort: 8000
           resources:
@@ -42,3 +50,22 @@ spec:
               port: 8000
             initialDelaySeconds: 60
             periodSeconds: 30
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: dynamo-model-cache
+---
+# local-path is a bind mount on the node, so the size is advisory rather than enforced.
+# Node-local is what we want here: weights are large sequential reads feeding the GPU.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamo-model-cache
+  namespace: ${DYNAMO_NAMESPACE}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: ${MODEL_CACHE_SIZE}

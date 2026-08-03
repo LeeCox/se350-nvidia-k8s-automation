@@ -24,6 +24,11 @@ spec:
                 secretKeyRef:
                   name: hf-secret
                   key: token
+          # The image already sets HF_HOME=/data, so mounting the PVC there persists the hub
+          # cache across restarts instead of re-pulling several GB into the ephemeral layer.
+          volumeMounts:
+            - name: model-cache
+              mountPath: /data
           resources:
             limits:
               nvidia.com/gpu: 1
@@ -37,3 +42,22 @@ spec:
               port: 80
             initialDelaySeconds: 60
             periodSeconds: 15
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: hf-model-cache
+---
+# Separate claim from the Dynamo one: the two runtimes lay out their caches differently
+# (TGI adds an xet store alongside hub/), so they should not share a directory.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-model-cache
+  namespace: ${HF_NAMESPACE}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: ${MODEL_CACHE_SIZE}
