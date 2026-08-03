@@ -11,6 +11,8 @@ require_cmd envsubst
 export HF_NAMESPACE="${HF_NAMESPACE:-dynamo}"
 export HF_MODEL_ID="${HF_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct}"
 export TGI_IMAGE="${TGI_IMAGE:-ghcr.io/huggingface/text-generation-inference:latest}"
+# Advisory only under local-path, but the PVC manifest requires a value.
+export MODEL_CACHE_SIZE="${MODEL_CACHE_SIZE:-100Gi}"
 
 kubectl create namespace "$HF_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
