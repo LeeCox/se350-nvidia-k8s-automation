@@ -39,6 +39,9 @@ scripts/
   09-setup-remote-management.sh  # SSH, Tailscale, Cockpit, k9s, Ansible
   deploy-kaito-model.sh      # applies a KAITO Workspace - manual, not run by run-all.sh
   chat-nemotron.ps1          # local OpenAI-compatible chat loop with bounded tool execution
+  mcp-agent.mjs              # MCP-aware Node.js agent runner
+  mcp.config.example.json    # read-only Kubernetes MCP starter configuration
+  package.json / package-lock.json
 manifests/
   gpu-test-pod.yaml
   kaito-workspace-example.yaml    # reference-only, not auto-applied
@@ -84,6 +87,19 @@ Keep the SSH tunnel to the KAITO service running, then launch
 `get_local_time` function tool, executes the tool when Nemotron requests it, and sends the
 result back for the final response. Add tools to `Invoke-Tool` only when their execution
 scope is understood; the example intentionally does not grant arbitrary shell access.
+
+### How do I use predefined MCP tools with Nemotron?
+
+Install dependencies with `npm install`, copy `mcp.config.example.json` to
+`mcp.config.json`, and replace the kubeconfig placeholder with a kubeconfig that can reach
+the target cluster. Start the tunnel and run `npm run chat -- mcp.config.json`. The runner
+discovers tools from configured MCP servers and forwards their schemas to Nemotron. The
+starter Kubernetes server is read-only and disables destructive operations.
+
+The MCP ecosystem changes package names over time. The maintained Kubernetes server is
+`kubernetes-mcp-server@latest`; older reference packages such as `@modelcontextprotocol/server-time`
+may no longer be published under those names. Add other MCP servers to `mcp.config.json` when
+their current package or executable is known.
 
 ---
 

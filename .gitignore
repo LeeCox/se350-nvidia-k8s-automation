@@ -1,2 +1,4 @@
 config.env
+mcp.config.json
+node_modules/
 *.log

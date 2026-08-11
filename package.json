@@ -1,0 +1,12 @@
+{
+  "name": "se350-nemotron-mcp-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "chat": "node mcp-agent.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "openai": "^5.12.2"
+  }
+}
