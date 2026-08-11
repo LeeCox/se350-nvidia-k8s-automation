@@ -1,0 +1,18 @@
+{
+  "model": "nvidia-nemotron-3-nano-4b-bf16",
+  "baseUrl": "http://127.0.0.1:8000/v1",
+  "maxTokens": 512,
+  "servers": {
+    "kubernetes": {
+      "command": "npx.cmd",
+      "args": [
+        "-y",
+        "kubernetes-mcp-server@latest",
+        "--read-only",
+        "--disable-destructive",
+        "--kubeconfig",
+        "C:/Users/REPLACE_ME/.kube/config"
+      ]
+    }
+  }
+}
