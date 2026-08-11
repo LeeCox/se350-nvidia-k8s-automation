@@ -38,6 +38,7 @@ scripts/
   08-deploy-hf-model.sh      # Hugging Face model via TGI
   09-setup-remote-management.sh  # SSH, Tailscale, Cockpit, k9s, Ansible
   deploy-kaito-model.sh      # applies a KAITO Workspace - manual, not run by run-all.sh
+  chat-nemotron.ps1          # local OpenAI-compatible chat loop with bounded tool execution
 manifests/
   gpu-test-pod.yaml
   kaito-workspace-example.yaml    # reference-only, not auto-applied
@@ -75,6 +76,14 @@ pass any HuggingFace model ID supported by vLLM as a best-effort generic preset.
 The A2 has one GPU. Dynamo (07) and the TGI `hf-model` deployment (08) also request
 `nvidia.com/gpu: 1`, so only one of Dynamo/TGI/KAITO can be `Running` at a time - the script
 warns and gives the `kubectl scale --replicas=0` commands to free the GPU if needed.
+
+### How do I use Nemotron as an agent from a terminal?
+
+Keep the SSH tunnel to the KAITO service running, then launch
+`powershell -File scripts/chat-nemotron.ps1` in a second terminal. The client supplies a
+`get_local_time` function tool, executes the tool when Nemotron requests it, and sends the
+result back for the final response. Add tools to `Invoke-Tool` only when their execution
+scope is understood; the example intentionally does not grant arbitrary shell access.
 
 ---
 
