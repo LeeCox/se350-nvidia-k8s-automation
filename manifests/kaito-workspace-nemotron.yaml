@@ -1,7 +1,7 @@
 # KAITO Workspace for NVIDIA Nemotron 3 Nano 4B - the agentic/tool-calling model that fits the
 # A2's 16GB VRAM. Nemotron 3.5 Lightning (30B-A3B) does NOT fit here - NVIDIA's own hardware
 # matrix requires a single A100/H100-class GPU minimum, well beyond the A2.
-# This is a curated KAITO preset, so no custom vLLM flags are needed.
+# This is a curated KAITO preset with A2-specific vLLM tuning and tool-call parsing below.
 #
 # Apply with: bash scripts/deploy-kaito-model.sh
 # (or manually: envsubst < manifests/kaito-workspace-nemotron.yaml | kubectl apply -f -)
@@ -25,6 +25,8 @@ data:
       gpu-memory-utilization: 0.85
       max-model-len: 8192
       max-num-seqs: 4
+      tool-call-parser: qwen3_coder
+      additional-config: '{"enable_auto_tool_choice": true}'
 ---
 apiVersion: kaito.sh/v1beta1
 kind: Workspace
