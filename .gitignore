@@ -1,4 +1,5 @@
 config.env
 mcp.config.json
+mcp.kubeconfig
 node_modules/
 *.log
