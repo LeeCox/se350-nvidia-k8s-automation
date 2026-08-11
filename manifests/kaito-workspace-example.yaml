@@ -6,11 +6,10 @@ apiVersion: kaito.sh/v1beta1
 kind: Workspace
 metadata:
   name: workspace-phi-4-mini
-spec:
-  resource:
-    labelSelector:
-      matchLabels:
-        apps: llm-inference
-  inference:
-    preset:
-      name: phi-4-mini-instruct
+resource:
+  labelSelector:
+    matchLabels:
+      apps: llm-inference
+inference:
+  preset:
+    name: phi-4-mini-instruct

@@ -42,12 +42,18 @@ fi
 
 # BYO nodes require Node Auto Provisioning disabled - otherwise KAITO tries to call a
 # cloud provisioner (Karpenter/gpu-provisioner) that does not exist on this on-prem host.
+# nodeProvisioner must ALSO be set to "byo" - the featureGates flag alone is not enough:
+# main.go resolves consts.ActiveNodeProvisioner from --node-provisioner at startup and that
+# value wins, silently overriding disableNodeAutoProvisioning back to false when left at its
+# "azure-gpu-provisioner" chart default. Without this, Workspace creation fails validation
+# with "instanceType is required when node auto-provisioning is enabled".
 log "Installing KAITO workspace controller (BYO GPU node mode) in namespace $KAITO_NAMESPACE"
 helm upgrade --install kaito-workspace kaito/workspace \
   --namespace "$KAITO_NAMESPACE" \
   --create-namespace \
   --set clusterName="$CLUSTER_NAME" \
   --set featureGates.disableNodeAutoProvisioning=true \
+  --set nodeProvisioner=byo \
   "${NFD_ARGS[@]}" \
   --wait --take-ownership
 

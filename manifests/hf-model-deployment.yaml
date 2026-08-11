@@ -5,6 +5,11 @@ metadata:
   namespace: ${HF_NAMESPACE}
 spec:
   replicas: 1
+  # The node has one GPU, so a rolling update deadlocks: maxUnavailable rounds down to 0 at one
+  # replica, so the old pod keeps the GPU while the new one waits for a GPU that never frees.
+  # WaitForFirstConsumer then leaves the PVC Pending too, since it binds on pod scheduling.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: hf-model

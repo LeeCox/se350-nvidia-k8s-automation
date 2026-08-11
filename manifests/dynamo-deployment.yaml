@@ -5,6 +5,10 @@ metadata:
   namespace: ${DYNAMO_NAMESPACE}
 spec:
   replicas: 1
+  # Single GPU on this node - see the note in hf-model-deployment.yaml. A rolling update would
+  # leave the replacement pod Pending forever behind the outgoing pod's GPU claim.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: dynamo

@@ -37,9 +37,11 @@ scripts/
   07-deploy-dynamo.sh        # Dynamo frontend + 1 vLLM worker, single GPU
   08-deploy-hf-model.sh      # Hugging Face model via TGI
   09-setup-remote-management.sh  # SSH, Tailscale, Cockpit, k9s, Ansible
+  deploy-kaito-model.sh      # applies a KAITO Workspace - manual, not run by run-all.sh
 manifests/
   gpu-test-pod.yaml
   kaito-workspace-example.yaml    # reference-only, not auto-applied
+  kaito-workspace-nemotron.yaml   # Nemotron 3 Nano 4B preset, applied by deploy-kaito-model.sh
   dynamo-deployment.yaml / dynamo-service.yaml
   hf-model-deployment.yaml / hf-model-service.yaml
 run-all.sh                 # runs every script above in numeric order
@@ -60,6 +62,19 @@ They both default to the same namespace variable value out of convenience. Set `
 ### Why is `manifests/kaito-workspace-example.yaml` not applied by any script?
 
 KAITO's `Workspace` custom resource is how *you* choose which model/preset to deploy. The install script only stands up the controller and labels the node; applying a `Workspace` is a separate, deliberate action left to you.
+
+### How do I deploy a model through KAITO?
+
+Run `bash scripts/deploy-kaito-model.sh`. It applies `manifests/kaito-workspace-nemotron.yaml`
+(defaults to the curated `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16` preset - an agentic/tool-calling
+model sized for the A2's 16GB VRAM) and waits for the Workspace to report ready. Override
+`KAITO_WORKSPACE_NAME` / `KAITO_MODEL_PRESET` in `config.env` to deploy a different preset - see
+the [presets list](https://kaito-project.github.io/kaito/docs/presets) for curated models, or
+pass any HuggingFace model ID supported by vLLM as a best-effort generic preset.
+
+The A2 has one GPU. Dynamo (07) and the TGI `hf-model` deployment (08) also request
+`nvidia.com/gpu: 1`, so only one of Dynamo/TGI/KAITO can be `Running` at a time - the script
+warns and gives the `kubectl scale --replicas=0` commands to free the GPU if needed.
 
 ---
 
@@ -101,6 +116,8 @@ Convenience for a lab environment — you always get current fixes without maint
 | `GPU_OPERATOR_VERSION` | *(empty)* | Set to pin a specific chart version; empty = latest |
 | `KAITO_NAMESPACE` | `kaito-workspace` | Namespace for the KAITO controller |
 | `KAITO_NODE_LABEL_KEY` / `KAITO_NODE_LABEL_VALUE` | `apps` / `llm-inference` | Label applied to the node so a `Workspace` CR's `labelSelector` can match it |
+| `KAITO_WORKSPACE_NAME` | `workspace-nemotron-3-nano-4b` | Name of the `Workspace` CR applied by `deploy-kaito-model.sh` |
+| `KAITO_MODEL_PRESET` | `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16` | KAITO preset name (= HF model ID) deployed by `deploy-kaito-model.sh` |
 | `DYNAMO_NAMESPACE` | `dynamo` | Namespace for the Dynamo deployment |
 | `DYNAMO_IMAGE` | `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.0` | Container image running both `dynamo.frontend` and `dynamo.vllm` |
 | `DYNAMO_MODEL_ID` | `Qwen/Qwen3-0.6B` | Small model used to prove the Dynamo path works |
