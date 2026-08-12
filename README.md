@@ -174,6 +174,43 @@ Example prompt:
 List the pods in the default namespace and tell me whether the Nemotron workspace pod is Ready.
 ```
 
+## NVIDIA NeMo Agent Toolkit
+
+For a NVIDIA-maintained agent runtime, the Ubuntu node can run the **NeMo Agent Toolkit** as
+a CPU-side orchestrator. It uses the local Nemotron OpenAI-compatible endpoint for inference and
+the maintained Kubernetes MCP server for read-only cluster tools. It does not consume another GPU.
+
+The tested workflow is in [nat-kubernetes-workflow.yml](nat-kubernetes-workflow.yml). The node setup
+uses Python 3.12, `uv`, `nvidia-nat[mcp]`, `nvidia-nat-langchain`, and the Kubernetes MCP binary.
+
+The current workflow uses native tool calling, limits the available Kubernetes tools, and disables
+destructive Kubernetes operations. The A2's 8K context window makes tool allowlists important.
+
+On the Ubuntu node, after the model Workspace is ready:
+
+```bash
+curl -fsSL https://astral.sh/uv/install.sh | sh
+uv venv --python 3.12 ~/nemo-agent-toolkit-env
+uv pip install --python ~/nemo-agent-toolkit-env/bin/python \
+  'nvidia-nat[mcp]' nvidia-nat-langchain
+
+mkdir -p ~/bin
+curl -fsSL \
+  https://github.com/containers/kubernetes-mcp-server/releases/download/v0.0.66/kubernetes-mcp-server-linux-amd64 \
+  -o ~/bin/kubernetes-mcp-server
+chmod +x ~/bin/kubernetes-mcp-server
+
+export NEMOTRON_BASE_URL="http://$(kubectl get svc workspace-nemotron-3-nano-4b -o jsonpath='{.spec.clusterIP}')/v1"
+export OPENAI_API_KEY=EMPTY
+~/nemo-agent-toolkit-env/bin/nat run \
+  --config_file ~/nat-kubernetes-workflow.yml \
+  --input "List all pods in the gpu-operator namespace and summarize their health."
+```
+
+For hosted NVIDIA models and hosted agentic skills from `build.nvidia.com`, use the same NAT
+workflow pattern with an NVIDIA API key and the hosted base URL. The local A2 remains the
+tool-orchestration and Nemotron Nano path; large hosted models should not be downloaded to the A2.
+
 ## GPU Constraints
 
 The A2 has one GPU, so only one model workload should claim `nvidia.com/gpu: 1` at a time. Dynamo, TGI, and KAITO are separate workloads and cannot all run simultaneously on this node.
