@@ -1,0 +1,40 @@
+function_groups:
+  kubernetes_tools:
+    _type: mcp_client
+    server:
+      transport: stdio
+      command: /home/leecox/bin/kubernetes-mcp-server
+      args:
+        - --read-only
+        - --disable-destructive
+        - --kubeconfig
+        - /home/leecox/.kube/config
+    include:
+      - pods_list_in_namespace
+      - pods_get
+      - pods_log
+      - events_list
+    tool_call_timeout: 120
+    reconnect_enabled: true
+
+llms:
+  nemotron_local:
+    _type: openai
+    model_name: nvidia-nemotron-3-nano-4b-bf16
+    base_url: ${NEMOTRON_BASE_URL:-http://10.43.131.80/v1}
+    api_key: ${OPENAI_API_KEY:-EMPTY}
+    temperature: 0.0
+    max_tokens: 256
+
+workflow:
+  _type: react_agent
+  tool_names:
+    - kubernetes_tools__pods_list_in_namespace
+  llm_name: nemotron_local
+  verbose: true
+  use_native_tool_calling: true
+  system_prompt: >-
+    You are a Kubernetes operations assistant. Use tools when needed and answer directly
+    and concisely after using them. Do not emit a reasoning trace.
+    Available tools: {tools}. Tool names: {tool_names}.
+  parse_agent_response_max_retries: 3
