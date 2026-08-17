@@ -1,9 +1,10 @@
 {
-  "name": "se350-nemotron-mcp-agent",
+  "name": "se350-nemotron-web-chat",
   "private": true,
   "type": "module",
   "scripts": {
-    "chat": "node mcp-agent.mjs"
+    "chat": "node mcp-agent.mjs",
+    "start": "node web-chat-server.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",

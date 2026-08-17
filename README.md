@@ -211,6 +211,130 @@ For hosted NVIDIA models and hosted agentic skills from `build.nvidia.com`, use 
 workflow pattern with an NVIDIA API key and the hosted base URL. The local A2 remains the
 tool-orchestration and Nemotron Nano path; large hosted models should not be downloaded to the A2.
 
+## Production Web Chat Portal
+
+The web portal runs inside K3s and calls Nemotron through its ClusterIP service:
+
+```text
+Browser -> Traefik HTTPS -> web-chat pod
+                          -> workspace-nemotron-3-nano-4b.default.svc.cluster.local
+                          -> kubernetes-mcp-server (stdio child process)
+                          -> in-cluster Kubernetes API
+```
+
+The pod does not contain SSH, `kubectl`, or a general-purpose command tool. It advertises only
+`kubernetes_pods_list` to Nemotron, forces that call to the `default` namespace, starts
+`kubernetes-mcp-server` with `--read-only` and `--disable-destructive`, and uses a namespace Role
+that grants only `get` and `list` on pods. The host NeMo Agent Toolkit installation remains
+available for CLI workflows; the portal uses the same MCP/Nemotron orchestration pattern without
+exposing the NAT CLI or host access to web requests.
+
+### Build and deploy on `se350ainode`
+
+Copy or clone this repository onto the node, then run:
+
+```bash
+cd ~/se350-nvidia-k8s-automation
+bash scripts/deploy-web-chat-k3s.sh
+```
+
+Docker is not required. The deployment script:
+
+1. Starts a short-lived Kaniko Job in K3s.
+2. Builds the image from the local repository through a read-only `hostPath`.
+3. Writes a Docker image archive under `.build/`.
+4. Imports the archive into K3s containerd with `k3s ctr images import`.
+5. Creates the portal token and a dedicated self-signed TLS certificate on first deployment.
+6. Applies the immutable image tag atomically and waits for rollout.
+7. Removes the build archive and Kaniko Job.
+
+An optional immutable tag can be supplied:
+
+```bash
+bash scripts/deploy-web-chat-k3s.sh 2026-08-16.1
+```
+
+The deployment uses `imagePullPolicy: Never`; every node that might run the pod must have the image
+imported. This cluster is intentionally single-node.
+
+### Access
+
+Open:
+
+```text
+https://192.168.1.209/
+```
+
+Traefik serves a dedicated self-signed certificate with `192.168.1.209` in its subject alternative
+names. Import `web-chat-tls`'s `tls.crt` into the management workstation's trusted root store, or
+accept the browser warning after verifying the certificate fingerprint on the node. Plain HTTP is
+not routed to the portal.
+
+Export and inspect the public certificate:
+
+```bash
+sudo k3s kubectl get secret web-chat-tls -n web-chat \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > web-chat-tls.crt
+openssl x509 -in web-chat-tls.crt -noout -fingerprint -sha256 -subject -ext subjectAltName
+```
+
+Retrieve the access token on the node:
+
+```bash
+sudo k3s kubectl get secret web-chat-auth -n web-chat \
+  -o jsonpath='{.data.token}' | base64 -d
+echo
+```
+
+Paste it into the portal. The browser keeps it in `sessionStorage`, not in a URL or persistent local
+storage. To rotate it:
+
+```bash
+TOKEN="$(openssl rand -base64 36 | tr -d '\n')"
+sudo k3s kubectl create secret generic web-chat-auth -n web-chat \
+  --from-literal="token=${TOKEN}" \
+  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+unset TOKEN
+sudo k3s kubectl rollout restart deployment/web-chat -n web-chat
+sudo k3s kubectl rollout status deployment/web-chat -n web-chat
+```
+
+### Validate
+
+```bash
+sudo k3s kubectl get deployment,pod,service,networkpolicy -n web-chat -o wide
+sudo k3s kubectl auth can-i \
+  --as=system:serviceaccount:web-chat:web-chat list pods -n default
+sudo k3s kubectl auth can-i \
+  --as=system:serviceaccount:web-chat:web-chat list secrets -n default
+curl --cacert /path/to/web-chat-tls.crt -fsS https://192.168.1.209/healthz
+
+TOKEN="$(sudo k3s kubectl get secret web-chat-auth -n web-chat \
+  -o jsonpath='{.data.token}' | base64 -d)"
+curl --cacert /path/to/web-chat-tls.crt -fsS https://192.168.1.209/api/chat \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H 'Content-Type: application/json' \
+  --data '{"messages":[{"role":"user","content":"List the live pods in the default namespace and summarize readiness."}]}'
+unset TOKEN
+```
+
+Expected RBAC results are `yes` for listing pods and `no` for listing secrets. A successful tool
+request includes a non-empty `toolActivity` array.
+
+### Operations
+
+```bash
+sudo k3s kubectl logs -n web-chat deployment/web-chat
+sudo k3s kubectl rollout restart deployment/web-chat -n web-chat
+sudo k3s kubectl delete -f manifests/web-chat.yaml
+```
+
+Traefik exposes HTTPS on the node's management address. API requests require the portal token, are
+rate-limited in-process, and have bounded request, conversation, model timeout, and tool-call limits.
+K3s uses Flannel by default, so verify that the selected cluster network policy backend enforces the
+included `NetworkPolicy`; the TLS, token, and RBAC controls remain effective even when network policy
+enforcement is unavailable.
+
 ## GPU Constraints
 
 The A2 has one GPU, so only one model workload should claim `nvidia.com/gpu: 1` at a time. Dynamo, TGI, and KAITO are separate workloads and cannot all run simultaneously on this node.
@@ -247,6 +371,11 @@ manifests/
   kaito-workspace-example.yaml
   dynamo-deployment.yaml
   hf-model-deployment.yaml
+  web-chat.yaml
+public/
+  index.html
+  app.js
+  styles.css
 scripts/
   00-prepare-host.sh
   01-install-nvidia-driver.sh
@@ -258,12 +387,16 @@ scripts/
   07-deploy-dynamo.sh
   08-deploy-hf-model.sh
   09-setup-remote-management.sh
+  build-web-chat-k3s.sh
+  deploy-web-chat-k3s.sh
   deploy-kaito-model.sh
   chat-nemotron.ps1
+Dockerfile
 mcp-agent.mjs
 mcp.config.example.json
 package.json
 run-all.sh
+web-chat-server.mjs
 ```
 
 See [FAQ.md](FAQ.md) for configuration details and troubleshooting notes.

@@ -1,0 +1,10 @@
+.git
+.gitignore
+config.env
+mcp.config.json
+mcp.kubeconfig
+node_modules
+manifests
+scripts
+FAQ.md
+README.md

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SE350 Nemotron Portal</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">SE350 AI NODE</p>
+          <h1>Nemotron Operations Portal</h1>
+          <p class="subtitle">Live local inference with bounded, read-only Kubernetes context.</p>
+        </div>
+        <span id="status" class="status">Checking service</span>
+      </header>
+
+      <section id="auth-panel" class="auth-panel">
+        <label for="token">Portal access token</label>
+        <div class="auth-row">
+          <input id="token" type="password" autocomplete="current-password" placeholder="Paste the Kubernetes secret token">
+          <button id="save-token" type="button">Unlock</button>
+        </div>
+        <p>The token stays in this browser tab and is never placed in the URL.</p>
+      </section>
+
+      <section id="chat-panel" class="chat-panel" hidden>
+        <div id="messages" class="messages" aria-live="polite">
+          <article class="message assistant">
+            <span>Nemotron</span>
+            <p>Ask me about the live model or the pods in the default namespace. Kubernetes access is read-only and namespace bounded.</p>
+          </article>
+        </div>
+        <form id="chat-form">
+          <label for="prompt">Message</label>
+          <textarea id="prompt" rows="3" maxlength="4000" placeholder="List the live pods and summarize their readiness." required></textarea>
+          <div class="form-footer">
+            <span>One read-only MCP tool: pod listing</span>
+            <button id="send" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
