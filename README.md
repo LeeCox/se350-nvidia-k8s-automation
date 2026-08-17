@@ -1,72 +1,127 @@
-# SE350 NVIDIA Kubernetes Automation
+# SE350 NVIDIA Kubernetes AI Harness
 
-Automation for bringing up an Ubuntu 24.04 bare-metal Kubernetes node with an NVIDIA A2 GPU and deploying local language models through K3s, the NVIDIA GPU Operator, KAITO, and OpenAI-compatible inference APIs.
+This repository provisions a single-node NVIDIA AI environment on a Lenovo SE350 and provides a
+secure harness for local model inference and bounded Kubernetes tool use.
 
-The primary tested workload is **NVIDIA Nemotron 3 Nano 4B BF16**, an agent-capable model with tool-calling support that fits the A2 after small-GPU vLLM tuning.
+The harness combines:
+
+- Ubuntu 24.04 and an NVIDIA A2 GPU
+- K3s and containerd
+- NVIDIA GPU Operator
+- KAITO in bring-your-own-node mode
+- NVIDIA Nemotron 3 Nano 4B served through an OpenAI-compatible API
+- NVIDIA NeMo Agent Toolkit and Model Context Protocol (MCP) integrations
+- An HTTPS web portal with a constrained, read-only Kubernetes tool
 
 ## Architecture
 
 ```text
-Ubuntu 24.04 bare metal
-  -> NVIDIA driver
-  -> K3s
-  -> NVIDIA GPU Operator
-  -> KAITO v0.11 BYO GPU-node mode
-  -> Nemotron 3 Nano 4B via vLLM
-  -> OpenAI-compatible API
-  -> PowerShell chat or Node.js MCP agent runner
+Management browser
+  |
+  | HTTPS + bearer token
+  v
+K3s Traefik ingress
+  |
+  v
+web-chat pod
+  |-- OpenAI chat requests --> Nemotron ClusterIP service --> KAITO/vLLM --> NVIDIA A2
+  |
+  `-- stdio MCP client --> kubernetes-mcp-server --> Kubernetes API
+                                                `--> default namespace pods: get/list only
 ```
 
-The node has one NVIDIA A2 GPU with 16 GB physical VRAM, approximately 14.6 GB usable by the workload.
+The model and portal communicate entirely over in-cluster services. The model API is not exposed
+directly to the management network. The portal does not contain SSH, `kubectl`, or a general-purpose
+shell tool.
+
+## Repository Components
+
+| Component | Purpose |
+| --- | --- |
+| `run-all.sh` | Runs the numbered host and Kubernetes bootstrap scripts |
+| `scripts/00-prepare-host.sh` | Prepares Ubuntu packages and host settings |
+| `scripts/01-install-nvidia-driver.sh` | Installs the NVIDIA driver |
+| `scripts/02-install-k3s.sh` | Installs single-node K3s |
+| `scripts/03-install-helm.sh` | Installs Helm |
+| `scripts/04-install-gpu-operator.sh` | Installs NVIDIA GPU Operator |
+| `scripts/05-validate-gpu.sh` | Validates GPU availability in Kubernetes |
+| `scripts/06-install-kaito.sh` | Installs KAITO in bring-your-own-node mode |
+| `scripts/deploy-kaito-model.sh` | Creates the Nemotron KAITO Workspace |
+| `scripts/build-web-chat-k3s.sh` | Builds the portal with Kaniko and imports it into K3s containerd |
+| `scripts/deploy-web-chat-k3s.sh` | Deploys and exposes the HTTPS portal |
+| `manifests/kaito-workspace-nemotron.yaml` | Defines the KAITO model workspace and vLLM settings |
+| `manifests/web-chat.yaml` | Defines the portal workload, RBAC, service, ingress, and network policy |
+| `web-chat-server.mjs` | Implements the portal API, model loop, and bounded MCP execution |
+| `nat-kubernetes-workflow.yml` | Defines the NeMo Agent Toolkit Kubernetes workflow |
+| `mcp-agent.mjs` | Provides a local Node.js MCP client for development and administration |
+
+The Dynamo and Hugging Face TGI manifests are alternative inference paths. They are not deployed
+alongside the KAITO Workspace because the node has one GPU.
 
 ## Requirements
 
-- Ubuntu 24.04 LTS on the GPU node
-- NVIDIA A2 GPU
-- Working network access to Ubuntu packages, Helm repositories, container registries, and Hugging Face
-- A non-root user with `sudo`
-- Windows, Linux, or macOS workstation for remote administration
-- SSH key access if running the automation remotely
+- Lenovo SE350 or equivalent Ubuntu 24.04 x86-64 host
+- NVIDIA A2 GPU with 16 GB VRAM
+- Internet access to Ubuntu, Helm, container, npm, GitHub, and model registries
+- A non-root account with passwordless or interactive `sudo`
+- SSH key access for remote administration
+- Access to the trusted management network
 
-The scripts assume a single-node K3s cluster and a single GPU. They are intended for a lab environment, not production hardening.
+The manifests assume:
 
-## Quick Start
+- One K3s server node
+- K3s containerd as the container runtime
+- Traefik enabled
+- The `local-path` storage class
+- Node management address `192.168.1.209`
 
-### 1. Prepare configuration
+## Configure the Harness
 
-On the Ubuntu node:
+Create the local configuration file on the Ubuntu node:
 
 ```bash
 cp config.env.example config.env
 nano config.env
 ```
 
-`config.env` is ignored by Git. Keep Hugging Face tokens and other secrets there, never in `config.env.example`.
+`config.env` is excluded from Git. Store model registry tokens and other secrets only in this file
+or in Kubernetes Secrets.
 
-### 2. Run the base installation
+Make the scripts executable:
 
 ```bash
 chmod +x run-all.sh scripts/*.sh
-./run-all.sh
 ```
 
-The numbered scripts run in this order:
+## Bootstrap the Node
 
-1. Host preparation
-2. NVIDIA driver installation
-3. K3s installation
-4. Helm installation
-5. NVIDIA GPU Operator installation
-6. GPU validation and KAITO installation
-7. Dynamo evaluation deployment
-8. TGI model deployment
-9. Remote management setup
+For the KAITO and web-portal harness, run the platform scripts followed by remote-management setup:
 
-`run-all.sh` does not apply a KAITO Workspace because a Workspace claims the node's only GPU. Model deployment is a separate deliberate step.
+```bash
+for step in \
+  scripts/00-prepare-host.sh \
+  scripts/01-install-nvidia-driver.sh \
+  scripts/02-install-k3s.sh \
+  scripts/03-install-helm.sh \
+  scripts/04-install-gpu-operator.sh \
+  scripts/05-validate-gpu.sh \
+  scripts/06-install-kaito.sh \
+  scripts/09-setup-remote-management.sh
+do
+  bash "$step"
+done
+```
 
-### 3. Deploy Nemotron through KAITO
+This sequence installs the host prerequisites, NVIDIA driver, K3s, Helm, GPU Operator, KAITO, and
+management utilities without starting a model workload.
 
-After `06-install-kaito.sh` has completed:
+`run-all.sh` also runs the Dynamo and Hugging Face TGI deployment scripts. Use it only when those
+alternative inference paths are required. Dynamo, TGI, and the KAITO Workspace each request the
+node's only GPU and must not run concurrently.
+
+## Deploy the Model
+
+Deploy the Nemotron Workspace:
 
 ```bash
 bash scripts/deploy-kaito-model.sh
@@ -78,115 +133,144 @@ The default model is:
 nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16
 ```
 
-Check status:
+The Workspace configures vLLM for the A2:
+
+```yaml
+vllm:
+  enforce-eager: true
+  gpu-memory-utilization: 0.85
+  max-model-len: 8192
+  max-num-seqs: 4
+  tool-call-parser: qwen3_coder
+  additional-config: '{"enable_auto_tool_choice": true}'
+```
+
+Check the model:
 
 ```bash
 export KUBECONFIG="$HOME/.kube/config"
 kubectl get workspace workspace-nemotron-3-nano-4b
-kubectl get pods -A
+kubectl get pod workspace-nemotron-3-nano-4b-0
+kubectl get service workspace-nemotron-3-nano-4b
 ```
 
-A successful deployment reports `STATE: Ready`, `INFERENCEREADY: True`, and `WORKSPACESUCCEEDED: True`.
+The Workspace is available when:
 
-## Nemotron 3.5 Lightning
+- `STATE` is `Ready`
+- `INFERENCEREADY` is `True`
+- `WORKSPACESUCCEEDED` is `True`
+- The model pod is `1/1 Running`
 
-Nemotron 3.5 Lightning 30B-A3B is not suitable for this A2 node. The model has 30B total parameters and requires substantially more memory and compute than the A2 provides, even with quantization. The 4B Nemotron 3 Nano model is the practical agentic model for this hardware.
+## Deploy the Web Portal
 
-## Access the API
-
-KAITO creates a ClusterIP service. From the Ubuntu node, find its address:
+Run on `se350ainode` from the repository root:
 
 ```bash
-export KUBECONFIG="$HOME/.kube/config"
-kubectl get svc workspace-nemotron-3-nano-4b
+bash scripts/deploy-web-chat-k3s.sh
 ```
 
-For reliable workstation access, use a two-hop forward. On the Ubuntu node, start a Kubernetes port-forward:
+An immutable image tag can be supplied:
 
 ```bash
-kubectl port-forward --address 127.0.0.1 \
-  svc/workspace-nemotron-3-nano-4b 18000:80
+bash scripts/deploy-web-chat-k3s.sh 2026-08-16.1
 ```
 
-In a second workstation terminal, forward the node-local port:
+Docker is not required. The deployment process:
 
-```powershell
-ssh -N -o ServerAliveInterval=30 `
-  -L 8000:127.0.0.1:18000 `
-  <ubuntu-ssh-host>
-```
+1. Runs a short-lived Kaniko Job in K3s.
+2. Mounts the repository into the build pod as read-only input.
+3. Builds a container image archive under `.build/`.
+4. Imports the archive with `k3s ctr images import`.
+5. Creates the portal access token if it does not exist.
+6. Creates an IP-address TLS certificate if it does not exist.
+7. Applies the immutable image tag and waits for rollout.
+8. Removes the image archive and build Job.
 
-The API is then available at:
+The portal is available at:
 
 ```text
-http://127.0.0.1:8000/v1
+https://192.168.1.209/
 ```
 
-Verify it:
+Plain HTTP does not route to the application.
+
+### Retrieve the Access Token
+
+From a management workstation:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/v1/models |
-  ConvertTo-Json -Depth 5
+ssh se350ainode "sudo k3s kubectl get secret web-chat-auth -n web-chat -o jsonpath='{.data.token}' | base64 -d; echo"
 ```
 
-## Simple Terminal Chat
+Paste the token into the portal. The browser keeps it in `sessionStorage`, so it is cleared when the
+browser session ends.
 
-The PowerShell client includes a bounded `get_local_time` tool:
+### Trust the TLS Certificate
 
-```powershell
-powershell.exe -ExecutionPolicy Bypass `
-  -File .\scripts\chat-nemotron.ps1
+Export the public certificate:
+
+```bash
+sudo k3s kubectl get secret web-chat-tls -n web-chat \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > web-chat-tls.crt
+openssl x509 -in web-chat-tls.crt \
+  -noout -fingerprint -sha256 -subject -ext subjectAltName
 ```
 
-The client executes only the explicitly implemented tools. It does not grant Nemotron arbitrary PowerShell or shell access.
+Verify the fingerprint and import `web-chat-tls.crt` into the management workstation's trusted root
+store. The certificate contains `192.168.1.209` as an IP subject alternative name.
 
-## MCP Agent Mode
+## Request Flow
 
-The Node.js MCP runner discovers tools from configured MCP servers and forwards them to Nemotron. It then executes returned tool calls and sends the results back to the model.
+For a normal model request:
 
-Install dependencies:
+1. The browser sends the conversation to `/api/chat`.
+2. The portal validates the bearer token, request size, message count, roles, and content length.
+3. The portal sends the bounded conversation to the Nemotron ClusterIP service.
+4. Nemotron returns a response to the portal.
+5. The portal returns the response to the browser.
 
-```powershell
-npm install
-```
+For a Kubernetes status request:
 
-Create the local configuration:
+1. The portal advertises only `kubernetes_pods_list` to Nemotron.
+2. Nemotron may request that tool.
+3. The portal rejects any other tool name or caller-controlled tool arguments.
+4. The portal maps the request to `pods_list_in_namespace` with namespace fixed to `default`.
+5. `kubernetes-mcp-server` calls the Kubernetes API using the pod's service account.
+6. The tool result is returned to Nemotron for a final response.
 
-```powershell
-Copy-Item mcp.config.example.json mcp.config.json
-```
+Tool execution is limited to one tool call per round and three model rounds.
 
-Update the kubeconfig path in `mcp.config.json`. The local `mcp.config.json` and `mcp.kubeconfig` files are ignored by Git.
+## Security Boundaries
 
-Start the agent:
+The portal uses multiple independent controls:
 
-```powershell
-$env:OPENAI_BASE_URL = "http://127.0.0.1:8000/v1"
-$env:OPENAI_API_KEY = "EMPTY"
-npm run chat -- mcp.config.json
-```
+- HTTPS termination through Traefik
+- Bearer token stored in a Kubernetes Secret
+- Constant-time token comparison
+- In-process request rate limiting
+- 64 KiB request limit
+- Conversation message and character limits
+- 120-second model request timeout
+- Non-root container user
+- Read-only root filesystem
+- Dropped Linux capabilities
+- Runtime-default seccomp profile
+- CPU and memory limits
+- `kubernetes-mcp-server --read-only --disable-destructive`
+- A fixed MCP tool allowlist
+- Namespace-fixed tool arguments
+- Kubernetes Role permitting only pod `get` and `list` in `default`
+- NetworkPolicy restricting ingress and required egress paths
 
-The starter configuration uses `kubernetes-mcp-server` in read-only mode with destructive operations disabled. It was tested against the live cluster with 14 discovered Kubernetes tools.
+The service account cannot list Secrets, modify resources, execute in pods, read logs, or access
+other namespaces.
 
-Example prompt:
+## NeMo Agent Toolkit Interface
 
-```text
-List the pods in the default namespace and tell me whether the Nemotron workspace pod is Ready.
-```
+The NeMo Agent Toolkit workflow provides a host-side orchestration interface for administrators. It
+uses the same local Nemotron API and Kubernetes MCP server without consuming another GPU.
 
-## NVIDIA NeMo Agent Toolkit
-
-For a NVIDIA-maintained agent runtime, the Ubuntu node can run the **NeMo Agent Toolkit** as
-a CPU-side orchestrator. It uses the local Nemotron OpenAI-compatible endpoint for inference and
-the maintained Kubernetes MCP server for read-only cluster tools. It does not consume another GPU.
-
-The tested workflow is in [nat-kubernetes-workflow.yml](nat-kubernetes-workflow.yml). The node setup
-uses Python 3.12, `uv`, `nvidia-nat[mcp]`, `nvidia-nat-langchain`, and the Kubernetes MCP binary.
-
-The current workflow uses native tool calling, limits the available Kubernetes tools, and disables
-destructive Kubernetes operations. The A2's 8K context window makes tool allowlists important.
-
-On the Ubuntu node, after the model Workspace is ready:
+Install the runtime on the node:
 
 ```bash
 curl -fsSL https://astral.sh/uv/install.sh | sh
@@ -199,208 +283,157 @@ curl -fsSL \
   https://github.com/containers/kubernetes-mcp-server/releases/download/v0.0.66/kubernetes-mcp-server-linux-amd64 \
   -o ~/bin/kubernetes-mcp-server
 chmod +x ~/bin/kubernetes-mcp-server
+```
 
-export NEMOTRON_BASE_URL="http://$(kubectl get svc workspace-nemotron-3-nano-4b -o jsonpath='{.spec.clusterIP}')/v1"
+Run the workflow:
+
+```bash
+export NEMOTRON_BASE_URL="http://$(kubectl get service \
+  workspace-nemotron-3-nano-4b -o jsonpath='{.spec.clusterIP}')/v1"
 export OPENAI_API_KEY=EMPTY
 ~/nemo-agent-toolkit-env/bin/nat run \
   --config_file ~/nat-kubernetes-workflow.yml \
-  --input "List all pods in the gpu-operator namespace and summarize their health."
+  --input "List the pods in the default namespace and summarize readiness."
 ```
 
-For hosted NVIDIA models and hosted agentic skills from `build.nvidia.com`, use the same NAT
-workflow pattern with an NVIDIA API key and the hosted base URL. The local A2 remains the
-tool-orchestration and Nemotron Nano path; large hosted models should not be downloaded to the A2.
+The workflow configuration controls which MCP tools are available to the agent.
 
-## Production Web Chat Portal
+## Local MCP Client
 
-The web portal runs inside K3s and calls Nemotron through its ClusterIP service:
+The Node.js client is an administrative and development interface for configured MCP servers.
+
+```powershell
+npm install
+Copy-Item mcp.config.example.json mcp.config.json
+$env:OPENAI_BASE_URL = "http://127.0.0.1:8000/v1"
+$env:OPENAI_API_KEY = "EMPTY"
+npm run chat -- mcp.config.json
+```
+
+Keep `mcp.config.json` and `mcp.kubeconfig` local. Both are excluded from Git. Restrict configured
+servers with read-only flags, tool allowlists, and least-privilege kubeconfig credentials.
+
+## Direct API Access
+
+The model service is a ClusterIP. For administrative access, forward it through the Kubernetes API:
+
+```bash
+kubectl port-forward --address 127.0.0.1 \
+  service/workspace-nemotron-3-nano-4b 8000:80
+```
+
+The API is then available on the node at:
 
 ```text
-Browser -> Traefik HTTPS -> web-chat pod
-                          -> workspace-nemotron-3-nano-4b.default.svc.cluster.local
-                          -> kubernetes-mcp-server (stdio child process)
-                          -> in-cluster Kubernetes API
+http://127.0.0.1:8000/v1
 ```
 
-The pod does not contain SSH, `kubectl`, or a general-purpose command tool. It advertises only
-`kubernetes_pods_list` to Nemotron, forces that call to the `default` namespace, starts
-`kubernetes-mcp-server` with `--read-only` and `--disable-destructive`, and uses a namespace Role
-that grants only `get` and `list` on pods. The host NeMo Agent Toolkit installation remains
-available for CLI workflows; the portal uses the same MCP/Nemotron orchestration pattern without
-exposing the NAT CLI or host access to web requests.
+Do not expose the model service directly on the management network.
 
-### Build and deploy on `se350ainode`
+## Validation
 
-Copy or clone this repository onto the node, then run:
+Check the portal resources:
 
 ```bash
-cd ~/se350-nvidia-k8s-automation
-bash scripts/deploy-web-chat-k3s.sh
+sudo k3s kubectl get deployment,pod,service,ingress,networkpolicy \
+  -n web-chat -o wide
 ```
 
-Docker is not required. The deployment script:
-
-1. Starts a short-lived Kaniko Job in K3s.
-2. Builds the image from the local repository through a read-only `hostPath`.
-3. Writes a Docker image archive under `.build/`.
-4. Imports the archive into K3s containerd with `k3s ctr images import`.
-5. Creates the portal token and a dedicated self-signed TLS certificate on first deployment.
-6. Applies the immutable image tag atomically and waits for rollout.
-7. Removes the build archive and Kaniko Job.
-
-An optional immutable tag can be supplied:
+Confirm the service-account boundary:
 
 ```bash
-bash scripts/deploy-web-chat-k3s.sh 2026-08-16.1
+sudo k3s kubectl auth can-i \
+  --as=system:serviceaccount:web-chat:web-chat \
+  list pods -n default
+
+sudo k3s kubectl auth can-i \
+  --as=system:serviceaccount:web-chat:web-chat \
+  list secrets -n default
 ```
 
-The deployment uses `imagePullPolicy: Never`; every node that might run the pod must have the image
-imported. This cluster is intentionally single-node.
+The expected results are `yes` for pods and `no` for Secrets.
 
-### Access
-
-Open:
-
-```text
-https://192.168.1.209/
-```
-
-Traefik serves a dedicated self-signed certificate with `192.168.1.209` in its subject alternative
-names. Import `web-chat-tls`'s `tls.crt` into the management workstation's trusted root store, or
-accept the browser warning after verifying the certificate fingerprint on the node. Plain HTTP is
-not routed to the portal.
-
-Export and inspect the public certificate:
+Check health over HTTPS:
 
 ```bash
-sudo k3s kubectl get secret web-chat-tls -n web-chat \
-  -o jsonpath='{.data.tls\.crt}' | base64 -d > web-chat-tls.crt
-openssl x509 -in web-chat-tls.crt -noout -fingerprint -sha256 -subject -ext subjectAltName
+curl --cacert web-chat-tls.crt -fsS \
+  https://192.168.1.209/healthz
 ```
 
-Retrieve the access token on the node:
+Validate a model and MCP request:
 
 ```bash
-sudo k3s kubectl get secret web-chat-auth -n web-chat \
-  -o jsonpath='{.data.token}' | base64 -d
-echo
+TOKEN="$(sudo k3s kubectl get secret web-chat-auth -n web-chat \
+  -o jsonpath='{.data.token}' | base64 -d)"
+
+curl --cacert web-chat-tls.crt -fsS \
+  https://192.168.1.209/api/chat \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  --data '{"messages":[{"role":"user","content":"List the live pods in the default namespace and summarize readiness."}]}'
+
+unset TOKEN
 ```
 
-Paste it into the portal. The browser keeps it in `sessionStorage`, not in a URL or persistent local
-storage. To rotate it:
+A tool-assisted response includes:
+
+```json
+{
+  "toolActivity": [
+    {
+      "tool": "kubernetes_pods_list",
+      "namespace": "default"
+    }
+  ]
+}
+```
+
+## Operations
+
+View portal status and logs:
+
+```bash
+sudo k3s kubectl get deployment,pod -n web-chat
+sudo k3s kubectl logs -n web-chat deployment/web-chat
+```
+
+Rotate the access token:
 
 ```bash
 TOKEN="$(openssl rand -base64 36 | tr -d '\n')"
-sudo k3s kubectl create secret generic web-chat-auth -n web-chat \
+sudo k3s kubectl create secret generic web-chat-auth \
+  -n web-chat \
   --from-literal="token=${TOKEN}" \
   --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 unset TOKEN
+
 sudo k3s kubectl rollout restart deployment/web-chat -n web-chat
 sudo k3s kubectl rollout status deployment/web-chat -n web-chat
 ```
 
-### Validate
+Redeploy the portal:
 
 ```bash
-sudo k3s kubectl get deployment,pod,service,networkpolicy -n web-chat -o wide
-sudo k3s kubectl auth can-i \
-  --as=system:serviceaccount:web-chat:web-chat list pods -n default
-sudo k3s kubectl auth can-i \
-  --as=system:serviceaccount:web-chat:web-chat list secrets -n default
-curl --cacert /path/to/web-chat-tls.crt -fsS https://192.168.1.209/healthz
-
-TOKEN="$(sudo k3s kubectl get secret web-chat-auth -n web-chat \
-  -o jsonpath='{.data.token}' | base64 -d)"
-curl --cacert /path/to/web-chat-tls.crt -fsS https://192.168.1.209/api/chat \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  --data '{"messages":[{"role":"user","content":"List the live pods in the default namespace and summarize readiness."}]}'
-unset TOKEN
+bash scripts/deploy-web-chat-k3s.sh
 ```
 
-Expected RBAC results are `yes` for listing pods and `no` for listing secrets. A successful tool
-request includes a non-empty `toolActivity` array.
-
-### Operations
+Remove the portal:
 
 ```bash
-sudo k3s kubectl logs -n web-chat deployment/web-chat
-sudo k3s kubectl rollout restart deployment/web-chat -n web-chat
 sudo k3s kubectl delete -f manifests/web-chat.yaml
+sudo k3s kubectl delete secret web-chat-auth web-chat-tls -n web-chat
 ```
 
-Traefik exposes HTTPS on the node's management address. API requests require the portal token, are
-rate-limited in-process, and have bounded request, conversation, model timeout, and tool-call limits.
-K3s uses Flannel by default, so verify that the selected cluster network policy backend enforces the
-included `NetworkPolicy`; the TLS, token, and RBAC controls remain effective even when network policy
-enforcement is unavailable.
+## Constraints
 
-## GPU Constraints
-
-The A2 has one GPU, so only one model workload should claim `nvidia.com/gpu: 1` at a time. Dynamo, TGI, and KAITO are separate workloads and cannot all run simultaneously on this node.
-
-The Nemotron Workspace uses an inference ConfigMap with settings that are important for the A2:
-
-```yaml
-vllm:
-  enforce-eager: true
-  gpu-memory-utilization: 0.85
-  max-model-len: 8192
-  max-num-seqs: 4
-  tool-call-parser: qwen3_coder
-  additional-config: '{"enable_auto_tool_choice": true}'
-```
-
-`enforce-eager` avoids CUDA graph memory overhead that caused the model to run out of VRAM during startup.
-
-## Important KAITO Details
-
-- KAITO must run in BYO mode with both `featureGates.disableNodeAutoProvisioning=true` and `nodeProvisioner=byo`.
-- KAITO Workspace `resource` and `inference` fields are top-level fields in the deployed CRD schema; they are not nested under `spec`.
-- Set `KUBECONFIG` explicitly to the user's kubeconfig when running remote commands. K3s otherwise falls back to the root-only `/etc/rancher/k3s/k3s.yaml`.
-- A first model startup downloads approximately 7.4 GiB and performs Mamba/Triton warmup. Allow several minutes before judging readiness.
-
-## Repository Layout
-
-```text
-config.env.example
-FAQ.md
-lib/common.sh
-manifests/
-  kaito-workspace-nemotron.yaml
-  kaito-workspace-example.yaml
-  dynamo-deployment.yaml
-  hf-model-deployment.yaml
-  web-chat.yaml
-public/
-  index.html
-  app.js
-  styles.css
-scripts/
-  00-prepare-host.sh
-  01-install-nvidia-driver.sh
-  02-install-k3s.sh
-  03-install-helm.sh
-  04-install-gpu-operator.sh
-  05-validate-gpu.sh
-  06-install-kaito.sh
-  07-deploy-dynamo.sh
-  08-deploy-hf-model.sh
-  09-setup-remote-management.sh
-  build-web-chat-k3s.sh
-  deploy-web-chat-k3s.sh
-  deploy-kaito-model.sh
-  chat-nemotron.ps1
-Dockerfile
-mcp-agent.mjs
-mcp.config.example.json
-package.json
-run-all.sh
-web-chat-server.mjs
-```
-
-See [FAQ.md](FAQ.md) for configuration details and troubleshooting notes.
+- The node has one GPU, so only one model workload can run at a time.
+- Images are imported into local K3s containerd and are available only on that node.
+- The self-signed TLS certificate must be trusted by management clients and rotated before expiry.
+- In-process rate-limit state resets when the portal pod restarts.
+- NetworkPolicy enforcement depends on the K3s networking backend.
+- The portal intentionally exposes only pod listing in the `default` namespace.
 
 ## License and Model Terms
 
-This repository contains automation code. The Nemotron model is governed by NVIDIA's model license and terms published with the Hugging Face model card. Review those terms before using the model beyond personal lab evaluation.
+This repository contains automation and harness code. Model artifacts are governed by the license
+and terms published with the selected model. Review those terms before use.
